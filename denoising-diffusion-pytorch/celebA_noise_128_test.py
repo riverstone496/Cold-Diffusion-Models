@@ -30,7 +30,7 @@ parser.add_argument('--save_folder', default='./results_cifar10', type=str)
 parser.add_argument('--data_path', default='../deblurring-diffusion-pytorch/root_celebA_128_train_new/', type=str)
 parser.add_argument('--load_path', default=None, type=str)
 parser.add_argument('--train_routine', default='Final', type=str)
-parser.add_argument('--sampling_routine', default='default', type=str,
+parser.add_argument('--sampling_routine', default='x0_step_down', type=str,
                     help='The choice of sampling routine for reversing the diffusion process.')
 parser.add_argument('--remove_time_embed', action="store_true")
 parser.add_argument('--residual', action="store_true")

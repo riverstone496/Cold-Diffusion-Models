@@ -639,7 +639,7 @@ class Trainer(object):
         fp16 = False,
         step_start_ema = 2000,
         update_ema_every = 10,
-        save_and_sample_every = 1000,
+        save_and_sample_every = 100,
         results_folder = './results',
         load_path = None,
         dataset = None,
@@ -648,6 +648,8 @@ class Trainer(object):
         damping=None,
         interval=None,
         gradient_clipping=-1,
+        momentum=0,
+        nesterov=False
     ):
         super().__init__()
         self.model = diffusion_model
@@ -668,6 +670,9 @@ class Trainer(object):
         self.interval=interval
         self.gradient_clipping=gradient_clipping
 
+        self.momentum=momentum
+        self.nesterov=nesterov
+
         if dataset == 'train':
             print(dataset, "DA used")
             self.ds = Dataset_Aug1(folder, image_size)
@@ -680,10 +685,10 @@ class Trainer(object):
         if self.optim == 'Adam':
             self.opt = Adam(diffusion_model.parameters(), lr=train_lr)
         elif self.optim == 'Shampoo':
-            config = ShampooHyperParams(nesterov=True,preconditioning_compute_steps=self.interval,statistics_compute_steps=self.interval)
-            self.opt = Shampoo(diffusion_model.parameters(),lr=train_lr,momentum=0.9,hyperparams=config)
+            config = ShampooHyperParams(nesterov=self.nesterov,preconditioning_compute_steps=self.interval,statistics_compute_steps=self.interval)
+            self.opt = Shampoo(diffusion_model.parameters(),lr=train_lr,momentum=self.momentum,hyperparams=config)
         else:
-            self.opt = torch.optim.SGD(diffusion_model.parameters(), lr=train_lr,momentum=0.9,nesterov=True)
+            self.opt = torch.optim.SGD(diffusion_model.parameters(), lr=train_lr,momentum=self.momentum,nesterov=self.nesterov)
         
         if self.optim == 'kfac_mc':
             config = asdl.NaturalGradientConfig(data_size=self.batch_size,
@@ -808,7 +813,7 @@ class Trainer(object):
                 data_2 = torch.randn_like(data_1)
                 og_img = data_2.cuda()
 
-                xt, direct_recons, all_images = self.ema_model.module.sample(batch_size=batches, img=og_img)
+                xt, direct_recons, all_images = self.ema_model.sample(batch_size=batches, img=og_img)
 
                 og_img = (og_img + 1) * 0.5
                 utils.save_image(og_img, str(self.results_folder / f'sample-og-{milestone}.png'), nrow=6)
@@ -843,7 +848,7 @@ class Trainer(object):
     def test_from_data(self, extra_path, s_times=None):
         batches = self.batch_size
         og_img = next(self.dl).cuda()
-        X_0s, X_ts = self.ema_model.module.all_sample(batch_size=batches, img=og_img, times=s_times)
+        X_0s, X_ts = self.ema_model.all_sample(batch_size=batches, img=og_img, times=s_times)
 
         og_img = (og_img + 1) * 0.5
         utils.save_image(og_img, str(self.results_folder / f'og-{extra_path}.png'), nrow=6)
@@ -891,7 +896,7 @@ class Trainer(object):
             og_img = data_2.cuda()
             print(og_img.shape)
 
-            xt, direct_recons, all_images = self.ema_model.module.gen_sample(batch_size=bs, img=og_img)
+            xt, direct_recons, all_images = self.ema_model.gen_sample(batch_size=bs, img=og_img)
 
             for i in range(all_images.shape[0]):
                 utils.save_image((all_images[i] + 1) * 0.5,
@@ -918,7 +923,7 @@ class Trainer(object):
             og_img = next(self.dl).cuda()
             print(og_img.shape)
 
-            Forward, Backward, final_all = self.ema_model.module.forward_and_backward(batch_size=batches, img=og_img)
+            Forward, Backward, final_all = self.ema_model.forward_and_backward(batch_size=batches, img=og_img)
             og_img = (og_img + 1) * 0.5
             final_all = (final_all + 1) * 0.5
 

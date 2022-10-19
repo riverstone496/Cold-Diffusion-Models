@@ -4,13 +4,21 @@ parameters:
   dataset:
     values:  [celebA]
   optim:
-    values: ['Adam']
+    values: ['Shampoo']
   loss_type:
     values: ['l2']
   batch_size:
     values: [32]
   lr:
-    values: [2e-5]
+    values: [2e-2]
+  interval:
+    values: [100]
+  gradient_clipping:
+    values: [1]
+  momentum:
+    values: [0.9]
+  nesterov:
+    values: [True]
 command:
   - ${env}
   - python

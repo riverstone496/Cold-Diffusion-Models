@@ -30,7 +30,9 @@ parser.add_argument('--train_steps', default=700000, type=int,
                     help='The number of iterations for training.')
 parser.add_argument('--optim', default='Adam', type=str)
 parser.add_argument('--lr', default=2e-5, type=float)
-parser.add_argument('--gradient_clippig', default=-1, type=float)
+parser.add_argument('--gradient_clipping', default=-1, type=float)
+parser.add_argument('--momentum', default=0.9, type=float)
+parser.add_argument('--nesterov', action='store_true', default=False)
 
 parser.add_argument('--dataset', default='celebA', type=str)
 parser.add_argument('--batch_size',default=32 ,type=int)
@@ -104,7 +106,9 @@ trainer = Trainer(
     dataset = 'train',
     optim=args.optim,
     interval=args.interval,
-    gradient_clippig=args.gradient_clippig
+    gradient_clipping=args.gradient_clipping,
+    momentum=args.momentum,
+    nesterov=args.nesterov
 )
 
 if args.wandb:

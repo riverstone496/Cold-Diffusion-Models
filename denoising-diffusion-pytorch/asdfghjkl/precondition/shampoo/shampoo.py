@@ -68,7 +68,7 @@ class ShampooHyperParams:
     nesterov: bool = True
 
     # iter num
-    num_iters: int = 10
+    num_iters: int = 100
     error_torelance: float = 1e-6
 
 
