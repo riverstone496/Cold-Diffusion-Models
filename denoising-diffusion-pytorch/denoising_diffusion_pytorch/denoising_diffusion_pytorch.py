@@ -17,9 +17,16 @@ import numpy as np
 from tqdm import tqdm
 from einops import rearrange
 
+from asdfghjkl.precondition import Shampoo,ShampooHyperParams
+import asdfghjkl as asdl
+from asdfghjkl import FISHER_EXACT, FISHER_MC, FISHER_EMP
+from asdfghjkl import SHAPE_FULL, SHAPE_LAYER_WISE, SHAPE_KRON, SHAPE_UNIT_WISE, SHAPE_DIAG
+from asdfghjkl import LOSS_CROSS_ENTROPY
+
 import torchgeometry as tgm
 import glob
 import os
+import wandb
 from PIL import Image
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
@@ -636,7 +643,11 @@ class Trainer(object):
         results_folder = './results',
         load_path = None,
         dataset = None,
-        shuffle=True
+        shuffle=True,
+        optim='Adam',
+        damping=None,
+        interval=None,
+        gradient_clipping=-1,
     ):
         super().__init__()
         self.model = diffusion_model
@@ -652,6 +663,11 @@ class Trainer(object):
         self.gradient_accumulate_every = gradient_accumulate_every
         self.train_num_steps = train_num_steps
 
+        self.optim = optim
+        self.damping=damping
+        self.interval=interval
+        self.gradient_clipping=gradient_clipping
+
         if dataset == 'train':
             print(dataset, "DA used")
             self.ds = Dataset_Aug1(folder, image_size)
@@ -661,7 +677,28 @@ class Trainer(object):
 
         self.dl = cycle(data.DataLoader(self.ds, batch_size = train_batch_size, shuffle=shuffle, pin_memory=True, num_workers=16, drop_last=True))
 
-        self.opt = Adam(diffusion_model.parameters(), lr=train_lr)
+        if self.optim == 'Adam':
+            self.opt = Adam(diffusion_model.parameters(), lr=train_lr)
+        elif self.optim == 'Shampoo':
+            config = ShampooHyperParams(nesterov=True,preconditioning_compute_steps=self.interval,statistics_compute_steps=self.interval)
+            self.opt = Shampoo(diffusion_model.parameters(),lr=train_lr,momentum=0.9,hyperparams=config)
+        else:
+            self.opt = torch.optim.SGD(diffusion_model.parameters(), lr=train_lr,momentum=0.9,nesterov=True)
+        
+        if self.optim == 'kfac_mc':
+            config = asdl.NaturalGradientConfig(data_size=self.batch_size,
+                                                fisher_type=FISHER_MC,
+                                                damping=self.damping,
+                                                upd_curvature_interval=self.interval,
+                                                upd_inv_interval=self.interval,
+                                                ignore_modules=[nn.BatchNorm1d,nn.BatchNorm2d,nn.BatchNorm3d,nn.LayerNorm],)
+            self.grad_maker = asdl.KfacGradientMaker(diffusion_model, config,swift=False)
+        elif self.optim == 'psgd':
+            config = asdl.PsgdGradientConfig(upd_precond_interval=self.interval)
+            self.grad_maker = asdl.KronPsgdGradientMaker(diffusion_model,config)
+        else:
+            grad_maker = asdl.GradientMaker(diffusion_model)
+
         self.step = 0
 
         self.results_folder = Path(results_folder)
@@ -742,10 +779,20 @@ class Trainer(object):
                 loss = torch.mean(self.model(data_1, data_2))
                 if self.step % 100 == 0:
                     print(f'{self.step}: {loss.item()}')
+
+                log = {'step': self.step,
+                'loss':loss.item()}
+                wandb.log(log)
+
                 u_loss += loss.item()
-                backwards(loss / self.gradient_accumulate_every, self.opt)
+
+                #backwards(loss / self.gradient_accumulate_every, self.opt)
+                (loss / self.gradient_accumulate_every).backward()
 
             acc_loss = acc_loss + (u_loss/self.gradient_accumulate_every)
+
+            if self.gradient_clipping>0:
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clipping)
 
             self.opt.step()
             self.opt.zero_grad()
@@ -775,9 +822,14 @@ class Trainer(object):
                 xt = (xt + 1) * 0.5
                 utils.save_image(xt, str(self.results_folder / f'sample-xt-{milestone}.png'),
                                  nrow=6)
-
+                
                 acc_loss = acc_loss/(self.save_and_sample_every+1)
                 print(f'Mean of last {self.step}: {acc_loss}')
+
+                log = {'step': self.step,
+                    'acc_loss':acc_loss}
+                wandb.log(log)
+
                 acc_loss=0
 
                 self.save()
